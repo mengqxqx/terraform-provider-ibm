@@ -4,6 +4,7 @@
 package ibm
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"strconv"
@@ -276,7 +277,11 @@ func resourceIBMResourceKeyRead(d *schema.ResourceData, meta interface{}) error 
 	if err != nil {
 		return fmt.Errorf("Error retrieving resource key: %s with resp code: %s", err, resp)
 	}
-	d.Set("credentials", resourceKey.Credentials)
+	var credInterface map[string]interface{}
+	cred, _ := json.Marshal(resourceKey.Credentials)
+	log.Println("MMMM:", string(cred))
+	json.Unmarshal(cred, &credInterface)
+	d.Set("credentials", Flatten(credInterface))
 	d.Set("name", resourceKey.Name)
 	d.Set("status", resourceKey.State)
 	iamRoleCrn := resourceKey.Credentials.IamRoleCRN
@@ -284,11 +289,17 @@ func resourceIBMResourceKeyRead(d *schema.ResourceData, meta interface{}) error 
 		roleCrn := *iamRoleCrn
 		roleName := roleCrn[strings.LastIndex(roleCrn, ":")+1:]
 
-		if strings.Contains(roleCrn, ":serviceRole:") {
+		if strings.Contains(roleCrn, ":customRole:") {
 			iampapv2Client, err := meta.(ClientSession).IAMPAPAPIV2()
 			if err == nil {
-				resourceCRN := resourceKey.CRN
-				roles, err := iampapv2Client.IAMRoles().ListCustomRoles(*resourceKey.AccountID, *resourceCRN)
+				var resourceCRN string
+				if resourceKey.CRN != nil {
+					serviceName := strings.Split(*resourceKey.CRN, ":")
+					if len(serviceName) > 4 {
+						resourceCRN = serviceName[4]
+					}
+				}
+				roles, err := iampapv2Client.IAMRoles().ListCustomRoles(*resourceKey.AccountID, resourceCRN)
 				if err == nil && len(roles) > 0 {
 					for _, role := range roles {
 						if role.Name == roleName {
@@ -303,12 +314,27 @@ func resourceIBMResourceKeyRead(d *schema.ResourceData, meta interface{}) error 
 		}
 	}
 
-	cred := *resourceKey.SourceCRN
-	if cred != "" {
-		d.Set("resource_instance_id", cred)
+	sCrn := *resourceKey.SourceCRN
+	if sCrn != "" {
+		d.Set("resource_instance_id", sCrn)
 	}
 
 	d.Set("crn", resourceKey.CRN)
+
+	d.Set("guid", resourceKey.GUID)
+	d.Set("url", resourceKey.URL)
+	d.Set("account_id", resourceKey.AccountID)
+	d.Set("resource_group_id", resourceKey.ResourceGroupID)
+	d.Set("source_crn", resourceKey.SourceCRN)
+	d.Set("state", resourceKey.State)
+	d.Set("iam_compatible", resourceKey.IamCompatible)
+	d.Set("resource_instance_url", resourceKey.ResourceInstanceURL)
+	d.Set("created_at", resourceKey.CreatedAt)
+	d.Set("updated_at", resourceKey.UpdatedAt)
+	d.Set("deleted_at", resourceKey.DeletedAt)
+	d.Set("created_by", resourceKey.CreatedBy)
+	d.Set("updated_by", resourceKey.UpdatedBy)
+	d.Set("deleted_by", resourceKey.DeletedBy)
 
 	return nil
 }
